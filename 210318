@@ -1,0 +1,429 @@
+
+#include <Audio.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
+#include <SerialFlash.h>
+#include <Bounce.h>
+
+
+#define p_level_sound 2
+#define p_level_program 3
+#define p_level_play 4
+
+#define p_immortal_1 5
+#define p_immortal_2 6
+#define p_immortal_3 21
+
+#define p_drum_l 8
+#define p_drum_r 9
+
+#define p_function_1 22
+#define p_function_2 11
+
+#define p_headFlag 12
+
+#define p_cuttingFlag_up 13
+#define p_cuttingFlag_bottom 23
+
+#define p_clk 15
+#define p_umbrella_1 16
+#define p_umbrella_2 17
+#define p_umbrella_3 18
+#define p_umbrella_4 19
+
+#define p_string 20
+
+#define SDCARD_CS_PIN    10
+#define SDCARD_MOSI_PIN  7
+#define SDCARD_SCK_PIN   14
+
+
+/*================sound library================*/
+const char * GUANC[4] = {"GUANC1.WAV", "GUANC2.WAV", "GUANC3.WAV", "GUANC4.WAV",};
+
+const char * GUAND[4] = {"GUAND1.WAV", "GUAND2.WAV", "GUAND3.WAV", "GUAND4.WAV",};
+
+const char * GUANS_A[4] = {"GUANS1.WAV", "GUANS2.WAV", "GUANS3.WAV","GUANS4.WAV",};
+
+const char * GUANS_B[4] = {"GUANS4.WAV", "GUANS5.WAV", "GUANS6.WAV", "GUANS7.WAV",};
+/*================sound library================*/
+
+
+// GUItool: begin automatically generated code
+AudioPlaySdWav           playSdWav1;     //xy=961,773
+AudioFilterStateVariable filter1;        //xy=1101,779
+AudioMixer4              mixer1;         //xy=1226,785
+AudioEffectDelay         delay1;         //xy=1385,698
+AudioEffectChorus        chorus1;        //xy=1388,893
+AudioEffectReverb        reverb1;        //xy=1391,840
+AudioMixer4              mixer3;         //xy=1512,672
+AudioMixer4              mixer2;         //xy=1661,779
+AudioEffectEnvelope      envelope1;      //xy=1792,778
+AudioOutputI2S2          i2s2_1;         //xy=1933,780
+AudioConnection          patchCord1(playSdWav1, 0, filter1, 0);
+AudioConnection          patchCord2(playSdWav1, 1, filter1, 0);
+AudioConnection          patchCord3(filter1, 0, mixer1, 0);
+AudioConnection          patchCord4(filter1, 1, mixer1, 1);
+AudioConnection          patchCord5(filter1, 2, mixer1, 2);
+AudioConnection          patchCord6(mixer1, delay1);
+AudioConnection          patchCord7(mixer1, reverb1);
+AudioConnection          patchCord8(mixer1, chorus1);
+AudioConnection          patchCord9(mixer1, 0, mixer2, 0);
+AudioConnection          patchCord10(delay1, 0, mixer3, 0);
+AudioConnection          patchCord11(delay1, 1, mixer3, 1);
+AudioConnection          patchCord12(delay1, 2, mixer3, 2);
+AudioConnection          patchCord13(delay1, 3, mixer3, 3);
+AudioConnection          patchCord14(chorus1, 0, mixer2, 3);
+AudioConnection          patchCord15(reverb1, 0, mixer2, 2);
+AudioConnection          patchCord16(mixer3, 0, mixer2, 1);
+AudioConnection          patchCord17(mixer2, envelope1);
+AudioConnection          patchCord18(envelope1, 0, i2s2_1, 0);
+AudioConnection          patchCord19(envelope1, 0, i2s2_1, 1);
+AudioControlSGTL5000     sgtl5000_1;     //xy=1000,672
+// GUItool: end automatically generated code
+
+Bounce level_sound   = Bounce(p_level_sound, 15);
+Bounce level_program = Bounce(p_level_program, 15);
+Bounce immortal_1    = Bounce(p_immortal_1, 15);
+Bounce immortal_2    = Bounce(p_immortal_2, 15);
+Bounce immortal_3    = Bounce(p_immortal_3, 15);
+Bounce drum_l        = Bounce(p_drum_l, 15);
+Bounce drum_r        = Bounce(p_drum_r, 15);
+Bounce headFlag      = Bounce(p_headFlag, 15);
+Bounce function_1    = Bounce(p_function_1, 15);
+Bounce function_2    = Bounce(p_function_1, 15);
+
+/*---------------------------------------------------------------------------------------------------------------*/
+
+bool func1 = 0;
+bool func2 = 0;
+
+int adsr_or_fx = 0;
+int fx_num = 2;
+
+int immortal_idx;
+int immortal_num = 3;
+Bounce immortal[3] = {immortal_1, immortal_2, immortal_3,};
+
+int drum_type_num = 2;
+int drum_num = 4;
+
+int string_type_num = 2;
+int string_num = 4;
+
+int string_low;
+int string_middle;
+int string_high;
+
+/*=======struct of immortal SoundEffect========*/
+struct se
+{
+  int drum_idx;
+  int drum_type_idx;
+  int string_idx;
+  int string_type_idx;
+  int filter[2];
+  int fx[4];
+  int adsr[4];
+};
+typedef struct se SoundEffect;
+
+SoundEffect SE_list[3] = {};
+/*=============================================*/
+
+
+/*===========pre SoundEffect========================================*/
+int drum_idx = 0;
+int drum_type_idx = 0;
+int string_idx = 0;
+int string_type_idx = 0;
+int filter[2] = {0,0};
+int fx[4] = {0,0,0,0};
+int adsr[4] = {10,35,1,300};
+/*================================================================*/
+
+
+void setup() {
+  AudioMemory(1024);
+  pinMode(p_level_sound,   INPUT);
+  pinMode(p_level_program, INPUT);
+  pinMode(p_level_play,    INPUT);
+  pinMode(p_immortal_1, INPUT_PULLUP);
+  pinMode(p_immortal_2, INPUT_PULLUP);
+  pinMode(p_immortal_3, INPUT_PULLUP);
+  pinMode(p_drum_l, INPUT_PULLUP);
+  pinMode(p_drum_r, INPUT_PULLUP);
+  pinMode(p_function_1, INPUT);
+  pinMode(p_function_2, INPUT);
+  pinMode(p_headFlag, INPUT_PULLUP);
+  pinMode(p_cuttingFlag_up,      INPUT);
+  pinMode(p_cuttingFlag_bottom,  INPUT);
+  pinMode(p_umbrella_1, INPUT);
+  pinMode(p_umbrella_2, INPUT);
+  pinMode(p_umbrella_3, INPUT);
+  pinMode(p_umbrella_4, INPUT);
+  
+  Serial.begin(115200);
+  sgtl5000_1.enable();
+  sgtl5000_1.volume(0.5);
+  
+  SPI.setMOSI(SDCARD_MOSI_PIN);
+  SPI.setSCK(SDCARD_SCK_PIN);
+  if (!(SD.begin(SDCARD_CS_PIN))) {
+    while (1) {
+      Serial.println("Unable to access the SD card");
+      delay(500);  
+    }
+  }
+
+  mixer1.gain(0, 0.5);  //filter mixer
+  mixer1.gain(1, 0.5);
+  mixer1.gain(2, 0.5);
+
+  mixer3.gain(0, 0.5);  // delay mixer 
+  mixer3.gain(1, 0.5);
+  mixer3.gain(2, 0.5);
+  mixer3.gain(3, 0.5);
+
+  mixer2.gain(0, 1);  // FX mixer //clear
+  mixer2.gain(1, 0);  //delay
+  mixer2.gain(2, 0);  //reverb
+  mixer2.gain(3, 0);  //chorus
+
+  envelope1.attack(adsr[1]); //default ADSR
+  envelope1.decay(adsr[2]);
+  envelope1.sustain(adsr[2]);
+  envelope1.release(adsr[3]);
+
+  Serial.println("SETUP COMPLETE!");
+  delay(1000);
+}
+
+/*================update_level==================*/
+int level;
+int temp;
+bool update_level(){
+  bool _sound = digitalRead (p_level_sound);
+  bool _program = digitalRead (p_level_program);
+  bool _play = digitalRead (p_level_play);
+  if(_sound == true) temp = 1;
+  else if(_program == true) temp = 2;
+  else if(_play == true)temp = 3;
+  if(temp != level){
+    level = temp;
+    return true;
+  }
+  return false;
+}
+/*==============================================*/
+
+
+
+/*=============update_string_position==================*/
+int string_position;
+
+void update_string_position(){
+  string_position = analogRead(p_string);
+  Serial.println(string_position);
+}
+/*=====================================================*/
+
+
+
+/*===============================update_umbrella===================================*/
+int fx_state[4] = {};
+int fx_prevState[4] = {};
+int adsr_state[4] = {};
+int adsr_prevState[4] = {};
+int ret = 0;
+int umbrella[4] = {p_umbrella_1, p_umbrella_2, p_umbrella_3, p_umbrella_4};
+
+int update_umbrella(int i){
+  int ret;
+  adsr_state[i] = digitalRead(p_clk);
+  if(adsr_state[i] != adsr_prevState[i]){
+    if(digitalRead(umbrella[i]) != adsr_state[i]){
+      ret = 1;
+    }
+    else{
+      ret = -1;
+    }
+    adsr_prevState[i] = adsr_state[i];
+  }
+  return ret;}
+/*==================================================================================*/
+
+
+
+/*================update_filter================*/
+void update_filter(){
+  filter[1] = analogRead(p_cuttingFlag_up);
+  filter[2] = analogRead(p_cuttingFlag_bottom);
+  }
+/*=============================================*/
+
+
+
+/*=============update_immortal===============*/
+
+bool update_immortal(){
+  for(int i=0 ; i<immortal_num ; i++){
+    if(immortal[i].risingEdge()){
+      immortal_idx = i;
+      Serial.println("=======now choose immortal is=======");
+      Serial.println(immortal_idx);
+      Serial.print("============================");
+      return true;
+    }
+  }
+  return false;}
+/*==========================================*/
+
+
+/*=================set copy=================*/
+void setcopy(int* src, int* dst, int len) {
+    memcpy(dst, src, sizeof(src[0])*len);
+}
+/*====================================*/
+
+boolean fingerup = true;
+
+void level_1(){//--------------------------------------------------------------------------
+
+  SE_list[immortal_idx].drum_idx = drum_idx;
+  SE_list[immortal_idx].string_idx = string_idx;
+  setcopy(filter, SE_list[immortal_idx].filter, 2);
+  setcopy(fx, SE_list[immortal_idx].fx, 4);
+  setcopy(adsr, SE_list[immortal_idx].adsr, 4);
+
+  if(update_immortal()){
+   SE_list[immortal_idx].drum_idx = drum_idx;
+   SE_list[immortal_idx].string_idx = string_idx;
+   setcopy(filter, SE_list[immortal_idx].filter, 2);
+   setcopy(fx, SE_list[immortal_idx].fx, 4);
+   setcopy(adsr, SE_list[immortal_idx].adsr, 4);
+  }
+
+  bool func1 = digitalRead(p_function_1);
+  bool func2 = digitalRead(p_function_2);
+  bool touch_l = drum_l.risingEdge();
+  bool touch_r = drum_r.risingEdge();
+  update_string_position();
+  update_filter();
+
+  float filter_h_sound =  expf(filter[1] / 1024);
+  float filter_l_sound =  expf(filter[2] / 1024);
+  mixer1.gain(0, filter_l_sound);
+  mixer1.gain(1, 0.5);
+  mixer1.gain(2, filter_h_sound);
+
+
+  if(func1){
+    Serial.println("func1");
+    //換鼓
+    if(touch_l){
+      drum_idx = (drum_idx - 1 + drum_num) % drum_num;
+    }
+    else if(touch_r){
+      drum_idx = (drum_idx + 1) % drum_num;
+    }
+    
+    //換樂器
+    if(string_position > string_middle && string_position < string_high){
+      string_type_idx = (string_type_idx - 1 +string_num) % string_num;
+    }
+    else if (string_position < string_middle && string_position > string_low){
+      string_type_idx = (string_type_idx + 1 +string_num) % string_num;
+    }
+
+    Serial.println("drum_idx: ");
+    Serial.print(drum_idx);
+    Serial.println("string_idx: ");
+    Serial.print(string_idx);
+    Serial.print("\n");
+  }
+  
+  else if(func2){
+    Serial.println("func2");
+    if(touch_l){
+      adsr_or_fx = 0;
+      Serial.println("===============MODE==============");
+      Serial.println("FX");
+      Serial.println("=================================");
+    }
+    else if(touch_r){
+      adsr_or_fx = 1;
+      Serial.println("===============MODE==============");
+      Serial.println("ADSR");
+      Serial.println("=================================");
+    }
+
+  //FX
+  else if(adsr_or_fx == 0){
+    
+  }
+
+  
+  //ADSR
+  else if(adsr_or_fx == 1){
+      adsr[1] = adsr[1] + update_umbrella(1);
+      if (adsr[1] <= 0)  adsr[1] = 0;
+      if (adsr[1] >= 300)  adsr[1] = 300;
+      adsr[2] = adsr[2] + update_umbrella(2);
+      if (adsr[2] <= 0)  adsr[2] = 0;
+      if (adsr[2] >= 300)  adsr[2] = 300;
+      adsr[3] = adsr[3] + update_umbrella(3)/10;
+      if (adsr[3] <= 0)  adsr[3] = 0;
+      if (adsr[3] >= 1)  adsr[3] = 1;
+      adsr[1] = adsr[4] + update_umbrella(4);
+      if (adsr[4] <= 0)  adsr[4] = 0;
+      if (adsr[4] >= 1000)  adsr[4] = 1000;
+    }
+    envelope1.attack(adsr[1]);
+    envelope1.decay(adsr[2]);
+    envelope1.sustain(adsr[3]);
+    envelope1.release(adsr[4]);
+  }
+
+  int s = map(string_position, 0, 1023, 0, 7);
+  if(s = 0 && fingerup == true){
+    fingerup = false;
+    envelope1.noteOn();
+    playSdWav1.play(GUANS_A[string_idx]);
+    Serial.print("play...");
+    Serial.print(s);
+    Serial.print("\n");
+  }
+  else if (s < 0 && fingerup == false) {
+         fingerup = true;
+         envelope1.noteOff();
+  }
+
+  if (touch_l || touch_r){
+    envelope1.noteOn();
+    playSdWav1.play(GUANC[drum_idx]);
+  }
+
+}
+
+
+void loop() {
+
+  drum_l.update();
+  drum_r.update();
+  headFlag.update();
+  for(int i=0 ; i < immortal_num ; i++){
+    immortal[i].update();
+  }
+
+  
+  if(update_level()){
+    Serial.println("===============LEVEL==============");
+    Serial.println(level);
+    Serial.println("==================================");
+  }
+
+  if(level == 1) level_1;
+  delay(500);
+}
